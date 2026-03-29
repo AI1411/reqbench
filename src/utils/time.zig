@@ -33,6 +33,15 @@ test "parseDuration: 1h" {
 test "parseDuration: 500ms" {
     try std.testing.expectEqual(@as(u64, 500_000_000), try parseDuration("500ms"));
 }
+test "parseDuration: 1ms" {
+    try std.testing.expectEqual(@as(u64, 1_000_000), try parseDuration("1ms"));
+}
+test "parseDuration: ms only (invalid)" {
+    try std.testing.expectError(error.InvalidDuration, parseDuration("ms"));
+}
+test "parseDuration: overflow" {
+    try std.testing.expectError(error.InvalidDuration, parseDuration("18446744073709551615ms"));
+}
 test "parseDuration: invalid" {
     try std.testing.expectError(error.InvalidDuration, parseDuration("abc"));
 }
