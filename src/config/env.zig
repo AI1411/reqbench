@@ -5,6 +5,7 @@ pub const ExpandError = error{ EnvVarNotFound, OutOfMemory };
 /// allocator はArenaを想定。
 pub fn expand(input: []const u8, allocator: std.mem.Allocator) ExpandError![]u8 {
     var out = try std.ArrayListUnmanaged(u8).initCapacity(allocator, input.len);
+    errdefer out.deinit(allocator);
     var i: usize = 0;
     while (i < input.len) {
         if (i + 1 < input.len and input[i] == '$' and input[i + 1] == '{') {
@@ -38,6 +39,7 @@ test "expand: no variables" {
 
 test "expand: replaces known env var" {
     _ = setenv("TEST_TOKEN", "abc123", 1);
+    defer _ = setenv("TEST_TOKEN", "", 1);
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const result = try expand("Bearer ${TEST_TOKEN}", arena.allocator());
