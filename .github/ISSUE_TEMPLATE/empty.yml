@@ -1,0 +1,18 @@
+name: 📝 その他
+description: 上記のカテゴリに当てはまらない内容
+title: ""
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Issueを作成いただきありがとうございます。
+        自由な形式で内容を記載してください。
+
+  - type: textarea
+    id: content
+    attributes:
+      label: 内容
+      description: Issue の内容を記載してください
+    validations:
+      required: true

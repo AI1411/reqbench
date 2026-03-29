@@ -1,0 +1,105 @@
+name: 🐛 バグ報告
+description: システムの不具合や予期しない動作を報告
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        バグ報告ありがとうございます。以下の情報を提供してください。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 現象
+      description: どのような問題が発生していますか？
+      placeholder: 例）査定申請フォームで金額を入力すると、エラーメッセージが表示される
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      description: 問題を再現するための手順を記載してください
+      placeholder: |
+        1. 査定申請ページにアクセス
+        2. 被害額フィールドに「1000000」と入力
+        3. 送信ボタンをクリック
+        4. エラーが表示される
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待される動作
+      description: 本来どのように動作すべきですか？
+      placeholder: 例）正常に査定申請が作成され、一覧ページに遷移する
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の動作
+      description: 実際にはどのように動作しましたか？
+      placeholder: 例）「金額の形式が不正です」というエラーメッセージが表示され、申請が作成されない
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: 影響範囲
+      description: どのコンポーネントに関連していますか？
+      options:
+        - フロントエンド
+        - バックエンド
+        - データベース
+        - インフラ
+        - 不明
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 重要度
+      description: この問題の重要度を選択してください
+      options:
+        - Critical（システムが使用不可）
+        - High（主要機能が動作しない）
+        - Medium（一部機能に影響）
+        - Low（軽微な問題）
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 環境情報
+      description: 問題が発生した環境を記載してください
+      placeholder: |
+        - ブラウザ: Chrome 120
+        - OS: macOS 14.0
+        - 環境: 開発環境/ステージング/本番
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: エラーログ・スクリーンショット
+      description: 関連するログやスクリーンショットがあれば添付してください
+      placeholder: コンソールログ、エラーメッセージ、スクリーンショットなど
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 追加情報
+      description: その他、問題解決に役立つ情報があれば記載してください
+    validations:
+      required: false
