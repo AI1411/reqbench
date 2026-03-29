@@ -1,0 +1,8 @@
+.{
+    .name = .reqbench,
+    .fingerprint = 0x325de09a081203c8,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.13.0",
+    .dependencies = .{},
+    .paths = .{""},
+}
