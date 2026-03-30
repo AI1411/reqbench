@@ -37,14 +37,16 @@ pub const Histogram = struct {
 
     /// p: 0.0〜100.0
     pub fn percentile(self: *const Histogram, p: f64) u64 {
+        std.debug.assert(p >= 0.0 and p <= 100.0);
         if (self.total_count == 0) return 0;
         const target = @as(u64, @intFromFloat(@ceil(p / 100.0 * @as(f64, @floatFromInt(self.total_count)))));
         var cumulative: u64 = 0;
         for (self.counts, 0..) |count, i| {
             cumulative += count;
             if (cumulative >= target) {
-                // バケット下限値を返す (i=0は0、それ以外は前のバケット上限)
-                if (i == 0) return 0;
+                // 端点処理: <1ms バケットは min を、100ms+ バケットは max を返す
+                if (i == 0) return self.min;
+                if (i == BUCKET_COUNT - 1) return self.max;
                 return BUCKET_BOUNDS_NS[i - 1];
             }
         }
@@ -77,4 +79,20 @@ test "reset clears all counts" {
     h.record(5_000_000);
     h.reset();
     try std.testing.expectEqual(@as(u64, 0), h.total_count);
+}
+
+test "<1ms samples return min not zero" {
+    var h = Histogram{};
+    h.record(200_000); // 0.2ms
+    h.record(500_000); // 0.5ms
+    const p50 = h.percentile(50.0);
+    try std.testing.expect(p50 > 0);
+    try std.testing.expectEqual(@as(u64, 200_000), h.min);
+}
+
+test ">100ms samples return max for p99" {
+    var h = Histogram{};
+    h.record(500_000_000); // 500ms
+    const p99 = h.percentile(99.0);
+    try std.testing.expectEqual(@as(u64, 500_000_000), p99);
 }
