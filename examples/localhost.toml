@@ -1,0 +1,30 @@
+[scenario]
+name = "localhost health check"
+description = "ローカルサーバーのヘルスチェックとAPIベンチマーク"
+
+[defaults]
+base_url = "http://localhost:8080"
+concurrency = 10
+duration = "30s"
+timeout_ms = 3000
+
+[[endpoints]]
+name = "health"
+method = "GET"
+path = "/health"
+weight = 1
+
+[[endpoints]]
+name = "api-list"
+method = "GET"
+path = "/api/v1/items"
+weight = 3
+
+[[endpoints]]
+name = "api-create"
+method = "POST"
+path = "/api/v1/items"
+weight = 1
+[endpoints.body]
+type = "json"
+data = '{"name": "test item", "value": 42}'

@@ -63,7 +63,7 @@ pub fn main() !void {
     coll_thread.join();
 
     // stdout サマリー
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("\n=== {s} ===\n\n", .{sc.name});
     try stdout.print("{s:<20} {s:>8} {s:>8} {s:>8} {s:>8} {s:>8}\n", .{ "Endpoint", "Count", "RPS", "p50", "p95", "p99" });
     const elapsed_sec = @as(f64, @floatFromInt(duration_ns)) / 1e9;
