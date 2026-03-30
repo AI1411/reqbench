@@ -52,6 +52,7 @@ pub const Collector = struct {
 
     pub fn spawn(self: *Collector) !std.Thread {
         self.running.store(true, .release);
+        errdefer self.running.store(false, .release);
         return std.Thread.spawn(.{}, loop, .{self});
     }
 
@@ -60,21 +61,32 @@ pub const Collector = struct {
     }
 
     fn loop(self: *Collector) void {
+        var empty_count: u32 = 0;
         while (self.running.load(.acquire)) {
-            while (self.ring.pop()) |sample| processOne(self.stats, sample);
-            std.Thread.yield() catch {};
+            if (self.ring.pop()) |sample| {
+                processOne(self.stats, sample);
+                empty_count = 0;
+            } else {
+                empty_count += 1;
+                if (empty_count > 100) std.Thread.sleep(1_000_000) // 1ms バックオフ
+                else std.Thread.yield() catch {};
+            }
         }
         while (self.ring.pop()) |sample| processOne(self.stats, sample);
     }
 };
 
 pub fn processOne(stats: []EndpointStats, s: Sample) void {
+    if (s.endpoint_idx >= stats.len) return;
     const st = &stats[s.endpoint_idx];
     st.count += 1;
-    if (s.error_code != .none) st.error_count += 1;
-    st.bytes_total += s.bytes_received;
-    st.histogram.record(s.latency_ns);
-    if (s.status < 600) st.status_codes[s.status] += 1;
+    if (s.error_code != .none) {
+        st.error_count += 1;
+    } else {
+        st.bytes_total += s.bytes_received;
+        st.histogram.record(s.latency_ns);
+        if (s.status >= 100 and s.status < 600) st.status_codes[s.status] += 1;
+    }
 }
 
 test "process increments count" {
@@ -90,4 +102,29 @@ test "process counts errors" {
     const sample = Sample{ .endpoint_idx = 0, .status = 0, .latency_ns = 1_000_000, .bytes_received = 0, .error_code = .timeout };
     processOne(&stats, sample);
     try std.testing.expectEqual(@as(u64, 1), stats[0].error_count);
+}
+
+test "process accumulates bytes and status code" {
+    var stats = [1]EndpointStats{.{}};
+    const sample = Sample{ .endpoint_idx = 0, .status = 200, .latency_ns = 5_000_000, .bytes_received = 1024, .error_code = .none };
+    processOne(&stats, sample);
+    try std.testing.expectEqual(@as(u64, 1024), stats[0].bytes_total);
+    try std.testing.expectEqual(@as(u32, 1), stats[0].status_codes[200]);
+    try std.testing.expectEqual(@as(u32, 0), stats[0].status_codes[0]);
+}
+
+test "process error sample does not pollute bytes or status_codes" {
+    var stats = [1]EndpointStats{.{}};
+    const sample = Sample{ .endpoint_idx = 0, .status = 0, .latency_ns = 0, .bytes_received = 0, .error_code = .timeout };
+    processOne(&stats, sample);
+    try std.testing.expectEqual(@as(u64, 0), stats[0].bytes_total);
+    try std.testing.expectEqual(@as(u32, 0), stats[0].status_codes[0]);
+    try std.testing.expectEqual(@as(u64, 0), stats[0].histogram.total_count);
+}
+
+test "process ignores out-of-bounds endpoint_idx" {
+    var stats = [1]EndpointStats{.{}};
+    const sample = Sample{ .endpoint_idx = 5, .status = 200, .latency_ns = 5_000_000, .bytes_received = 512, .error_code = .none };
+    processOne(&stats, sample); // パニックせず処理を継続
+    try std.testing.expectEqual(@as(u64, 0), stats[0].count);
 }
