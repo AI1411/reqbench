@@ -1,0 +1,12 @@
+[scenario]
+name = "smoke test"
+
+[defaults]
+base_url = "http://httpbin.org"
+concurrency = 2
+duration = "3s"
+
+[[endpoints]]
+name = "get"
+method = "GET"
+path = "/get"
