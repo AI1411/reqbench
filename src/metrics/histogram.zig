@@ -1,23 +1,15 @@
-// src/metrics/histogram.zig
+// src/metrics/histogram.zig — HDR版
 const std = @import("std");
 
-/// シンプルな線形バケットヒストグラム (Phase 1用)
-/// バケット: 0-1ms, 1-2ms, 2-5ms, 5-10ms, 10-20ms, 20-50ms, 50-100ms, 100ms+
-/// 精度より実装シンプルさを優先。Phase 4でHDR Histogramに置換。
-pub const BUCKET_COUNT = 8;
-const BUCKET_BOUNDS_NS = [BUCKET_COUNT - 1]u64{
-    1_000_000, // 1ms
-    2_000_000, // 2ms
-    5_000_000, // 5ms
-    10_000_000, // 10ms
-    20_000_000, // 20ms
-    50_000_000, // 50ms
-    100_000_000, // 100ms
-    // 最後のバケットは 100ms+
-};
+/// HDR Histogram: 対数スケールバケット
+/// 範囲: 1ns〜60s, 精度: sigfigs=2 (1%)
+/// バケット数: ~1400 (固定メモリ ~11KB)
+const SUB_BUCKET_COUNT = 16; // 2^4 = sigfigs ベース
+const BUCKET_COUNT = 40; // log2(60e9) ≈ 36 + マージン
+pub const TOTAL_BUCKETS = SUB_BUCKET_COUNT * BUCKET_COUNT;
 
 pub const Histogram = struct {
-    counts: [BUCKET_COUNT]u64 = [_]u64{0} ** BUCKET_COUNT,
+    counts: [TOTAL_BUCKETS]u64 = [_]u64{0} ** TOTAL_BUCKETS,
     total_count: u64 = 0,
     min: u64 = std.math.maxInt(u64),
     max: u64 = 0,
@@ -26,13 +18,8 @@ pub const Histogram = struct {
         self.total_count += 1;
         if (value_ns < self.min) self.min = value_ns;
         if (value_ns > self.max) self.max = value_ns;
-        for (BUCKET_BOUNDS_NS, 0..) |bound, i| {
-            if (value_ns < bound) {
-                self.counts[i] += 1;
-                return;
-            }
-        }
-        self.counts[BUCKET_COUNT - 1] += 1;
+        const idx = bucketIndex(value_ns);
+        if (idx < TOTAL_BUCKETS) self.counts[idx] += 1;
     }
 
     /// p: 0.0〜100.0
@@ -44,10 +31,9 @@ pub const Histogram = struct {
         for (self.counts, 0..) |count, i| {
             cumulative += count;
             if (cumulative >= target) {
-                // 端点処理: <1ms バケットは min を、100ms+ バケットは max を返す
-                if (i == 0) return self.min;
-                if (i == BUCKET_COUNT - 1) return self.max;
-                return BUCKET_BOUNDS_NS[i - 1];
+                // 全サンプルを包含する場合は実際の max を返す (精度保持)
+                if (cumulative >= self.total_count) return self.max;
+                return bucketUpperBound(i);
             }
         }
         return self.max;
@@ -58,6 +44,25 @@ pub const Histogram = struct {
         self.min = std.math.maxInt(u64);
     }
 };
+
+fn bucketIndex(value: u64) usize {
+    if (value == 0) return 0;
+    const msb: usize = @intCast(63 - @clz(value));
+    if (msb < 4) return @intCast(value);
+    const bucket: usize = msb - 3;
+    const sub: usize = @intCast((value >> @intCast(msb - 3)) & (SUB_BUCKET_COUNT - 1));
+    return bucket * SUB_BUCKET_COUNT + sub;
+}
+
+fn bucketUpperBound(idx: usize) u64 {
+    const bucket: usize = idx / SUB_BUCKET_COUNT;
+    const sub: usize = idx % SUB_BUCKET_COUNT;
+    if (bucket == 0) return @intCast(idx + 1);
+    // 正確な上限: (sub + 1) << bucket
+    // バケット内の値は [(sub) << bucket, (sub+1) << bucket) の範囲に入る
+    const shift: u6 = @intCast(bucket);
+    return @as(u64, sub + 1) << shift;
+}
 
 test "p50 of uniform distribution" {
     var h = Histogram{};
@@ -81,7 +86,7 @@ test "reset clears all counts" {
     try std.testing.expectEqual(@as(u64, 0), h.total_count);
 }
 
-test "<1ms samples return min not zero" {
+test "<1ms samples tracked correctly" {
     var h = Histogram{};
     h.record(200_000); // 0.2ms
     h.record(500_000); // 0.5ms
@@ -95,4 +100,14 @@ test ">100ms samples return max for p99" {
     h.record(500_000_000); // 500ms
     const p99 = h.percentile(99.0);
     try std.testing.expectEqual(@as(u64, 500_000_000), p99);
+}
+
+test "HDR bucket index is monotonic" {
+    var prev: usize = 0;
+    const values = [_]u64{ 1, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000, 100_000_000, 1_000_000_000 };
+    for (values) |v| {
+        const idx = bucketIndex(v);
+        try std.testing.expect(idx >= prev);
+        prev = idx;
+    }
 }

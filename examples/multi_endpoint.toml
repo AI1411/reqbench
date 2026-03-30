@@ -1,0 +1,24 @@
+[scenario]
+name = "multi endpoint"
+description = "複数エンドポイントへの重み付きベンチマーク"
+
+[defaults]
+base_url = "http://httpbin.org"
+concurrency = 5
+duration = "10s"
+timeout_ms = 5000
+
+[[endpoints]]
+name = "get"
+method = "GET"
+path = "/get"
+weight = 3
+
+[[endpoints]]
+name = "post-json"
+method = "POST"
+path = "/post"
+weight = 1
+[endpoints.body]
+type = "json"
+data = '{"key": "value"}'
