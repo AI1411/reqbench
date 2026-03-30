@@ -38,14 +38,16 @@ pub fn parseFromReader(reader: anytype, buf: *[8192]u8) anyerror!ParseResult {
     if (status_line.len < 12) return error.InvalidResponse;
     const status = std.fmt.parseInt(u16, status_line[9..12], 10) catch return error.InvalidResponse;
 
-    // Content-Length を探す
+    // Content-Length と Transfer-Encoding を探す
     var body_bytes: u32 = 0;
     var lines = std.mem.splitSequence(u8, headers[status_line_end + 2 ..], "\r\n");
     while (lines.next()) |line| {
         if (std.ascii.startsWithIgnoreCase(line, "content-length:")) {
             const val = std.mem.trim(u8, line[15..], " ");
             body_bytes = std.fmt.parseInt(u32, val, 10) catch 0;
-            break;
+        } else if (std.ascii.startsWithIgnoreCase(line, "transfer-encoding:")) {
+            // chunked など Content-Length 不明なボディは未サポート
+            return error.InvalidResponse;
         }
     }
 
@@ -58,6 +60,8 @@ pub fn parseFromReader(reader: anytype, buf: *[8192]u8) anyerror!ParseResult {
         if (n == 0) break;
         discarded += @intCast(n);
     }
+    // ボディが途中で切断された場合はエラー
+    if (discarded < body_bytes) return error.InvalidResponse;
 
     return .{ .status = status, .body_bytes = body_bytes };
 }
@@ -77,4 +81,19 @@ test "parse status 404" {
     var buf: [8192]u8 = undefined;
     const result = try parseFromReader(fbs.reader(), &buf);
     try std.testing.expectEqual(@as(u16, 404), result.status);
+}
+
+test "truncated body returns InvalidResponse" {
+    // Content-Length: 20 だがボディは 5 バイトしかない
+    const raw = "HTTP/1.1 200 OK\r\nContent-Length: 20\r\n\r\nHello";
+    var fbs = std.io.fixedBufferStream(raw);
+    var buf: [8192]u8 = undefined;
+    try std.testing.expectError(error.InvalidResponse, parseFromReader(fbs.reader(), &buf));
+}
+
+test "transfer-encoding chunked returns InvalidResponse" {
+    const raw = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nHello\r\n0\r\n\r\n";
+    var fbs = std.io.fixedBufferStream(raw);
+    var buf: [8192]u8 = undefined;
+    try std.testing.expectError(error.InvalidResponse, parseFromReader(fbs.reader(), &buf));
 }
