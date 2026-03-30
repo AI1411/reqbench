@@ -14,6 +14,7 @@ test {
     _ = @import("metrics/collector.zig");
     _ = @import("http/request.zig");
     _ = @import("http/response.zig");
+    _ = @import("http/client.zig");
     _ = @import("engine/scheduler.zig");
     _ = @import("config/env.zig");
 }
