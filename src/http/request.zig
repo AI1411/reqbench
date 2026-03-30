@@ -11,6 +11,22 @@ pub fn extractHost(base_url: []const u8) []const u8 {
     return after_scheme;
 }
 
+/// Host / Content-Length / Connection は自動生成するため、ユーザー指定ヘッダから除外する
+fn isReservedHeader(key: []const u8) bool {
+    return std.ascii.eqlIgnoreCase(key, "host") or
+        std.ascii.eqlIgnoreCase(key, "content-length") or
+        std.ascii.eqlIgnoreCase(key, "connection");
+}
+
+/// ep.headers に同名キー（大小無視）が存在するか確認する
+fn epHasKey(ep_headers: *const std.StringHashMap([]const u8), key: []const u8) bool {
+    var it = ep_headers.iterator();
+    while (it.next()) |kv| {
+        if (std.ascii.eqlIgnoreCase(kv.key_ptr.*, key)) return true;
+    }
+    return false;
+}
+
 pub fn buildRequest(
     ep: *const scenario.Endpoint,
     defaults: *const scenario.Defaults,
@@ -23,12 +39,17 @@ pub fn buildRequest(
     w.print("Host: {s}\r\n", .{extractHost(defaults.base_url)}) catch return error.BufferTooSmall;
     w.writeAll("Connection: close\r\n") catch return error.BufferTooSmall;
 
+    // defaults.headers を出力。ただし予約ヘッダおよび ep.headers に同名キーがある場合はスキップ
     var it = defaults.headers.iterator();
     while (it.next()) |kv| {
+        if (isReservedHeader(kv.key_ptr.*)) continue;
+        if (epHasKey(&ep.headers, kv.key_ptr.*)) continue;
         w.print("{s}: {s}\r\n", .{ kv.key_ptr.*, kv.value_ptr.* }) catch return error.BufferTooSmall;
     }
+    // ep.headers を出力。予約ヘッダはスキップ
     var it2 = ep.headers.iterator();
     while (it2.next()) |kv| {
+        if (isReservedHeader(kv.key_ptr.*)) continue;
         w.print("{s}: {s}\r\n", .{ kv.key_ptr.*, kv.value_ptr.* }) catch return error.BufferTooSmall;
     }
 
@@ -142,6 +163,8 @@ test "buildRequest: endpoint headers override defaults" {
     var ep_headers = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer ep_headers.deinit();
     try ep_headers.put("X-Custom", "value");
+    // defaults と同名キー: ep 側の値が優先される
+    try ep_headers.put("Authorization", "Bearer ep-token");
 
     const ep = scenario.Endpoint{
         .name = "test",
@@ -152,7 +175,8 @@ test "buildRequest: endpoint headers override defaults" {
     };
     var defaults_headers = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer defaults_headers.deinit();
-    try defaults_headers.put("Authorization", "Bearer token");
+    try defaults_headers.put("Authorization", "Bearer default-token");
+    try defaults_headers.put("X-Tenant", "acme");
 
     const defaults = scenario.Defaults{
         .base_url = "http://localhost:8080",
@@ -160,6 +184,46 @@ test "buildRequest: endpoint headers override defaults" {
     };
     var buf: [4096]u8 = undefined;
     const req = try buildRequest(&ep, &defaults, &buf);
+    // ep 側の値のみ出力されること
+    try std.testing.expect(std.mem.indexOf(u8, req, "Authorization: Bearer ep-token\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, req, "Authorization: Bearer default-token\r\n") == null);
+    // defaults 固有のヘッダは出力されること
+    try std.testing.expect(std.mem.indexOf(u8, req, "X-Tenant: acme\r\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, req, "X-Custom: value\r\n") != null);
-    try std.testing.expect(std.mem.indexOf(u8, req, "Authorization: Bearer token\r\n") != null);
+}
+
+test "buildRequest: reserved headers in user input are ignored" {
+    var ep_headers = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer ep_headers.deinit();
+    try ep_headers.put("Host", "evil.com");
+    try ep_headers.put("Content-Length", "999");
+    try ep_headers.put("Connection", "keep-alive");
+
+    const ep = scenario.Endpoint{
+        .name = "test",
+        .method = .POST,
+        .path = "/api",
+        .headers = ep_headers,
+        .body = scenario.Body{ .type = .json, .data = "hello" },
+        .timeout_ms = 5000,
+    };
+    var defaults_headers = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer defaults_headers.deinit();
+    try defaults_headers.put("host", "also-evil.com");
+
+    const defaults = scenario.Defaults{
+        .base_url = "http://localhost:8080",
+        .headers = defaults_headers,
+    };
+    var buf: [4096]u8 = undefined;
+    const req = try buildRequest(&ep, &defaults, &buf);
+    // 自動生成された Host のみ出力され、ユーザー指定のものは無視される
+    try std.testing.expect(std.mem.indexOf(u8, req, "Host: localhost:8080\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, req, "evil.com") == null);
+    // Content-Length はボディ長から自動計算される
+    try std.testing.expect(std.mem.indexOf(u8, req, "Content-Length: 5\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, req, "Content-Length: 999") == null);
+    // Connection: close のみ出力
+    try std.testing.expect(std.mem.indexOf(u8, req, "Connection: close\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, req, "Connection: keep-alive") == null);
 }
