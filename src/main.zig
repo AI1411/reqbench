@@ -83,13 +83,20 @@ test {
     _ = @import("utils/time.zig");
     _ = @import("metrics/histogram.zig");
     _ = @import("metrics/collector.zig");
+    _ = @import("metrics/timeseries.zig");
     _ = @import("http/request.zig");
     _ = @import("http/response.zig");
     _ = @import("http/client.zig");
     _ = @import("engine/scheduler.zig");
+    _ = @import("engine/controller.zig");
     _ = @import("config/env.zig");
     _ = @import("config/parser.zig");
     _ = @import("engine/worker.zig");
     _ = @import("tui/input.zig");
     _ = @import("tui/widgets.zig");
+    _ = @import("tui/layout.zig");
+    _ = @import("tui/render.zig");
+    _ = @import("report/json.zig");
+    _ = @import("report/csv.zig");
+    _ = @import("report/compare.zig");
 }
